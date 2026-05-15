@@ -20,4 +20,5 @@ CPU → Cache → CDC FIFO → Memory
 
 ## Status
 
-🚧 Week 1 — CPU foundation in progress
+ ALU implementation and verification completed
+ Register file development in progress
