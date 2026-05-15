@@ -1,0 +1,10 @@
+*.vcd
+*.wlf
+*.log
+*.jou
+*.str
+*.tmp
+*.bak
+transcript
+vsim.wlf
+work/
