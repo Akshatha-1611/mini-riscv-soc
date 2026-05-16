@@ -197,4 +197,146 @@ module pipelined_datapath (
 
     );
 
+    // =====================================================
+    // EX STAGE
+    // =====================================================
+
+    wire [31:0] alu_input_b_ex;
+
+    wire [31:0] alu_result_ex;
+
+    wire zero_ex;
+
+    // ALU operand mux
+    assign alu_input_b_ex =
+            (id_ex_alu_src) ?
+            id_ex_imm :
+            id_ex_read_data2;
+
+    alu alu_unit (
+
+        .a(id_ex_read_data1),
+        .b(alu_input_b_ex),
+
+        .alu_sel(id_ex_alu_op),
+
+        .result(alu_result_ex),
+        .zero(zero_ex)
+
+    );
+
+    // =====================================================
+    // EX/MEM PIPELINE REGISTER
+    // =====================================================
+
+    wire [31:0] ex_mem_alu_result;
+
+    wire [31:0] ex_mem_read_data2;
+
+    wire [4:0] ex_mem_rd;
+
+    wire ex_mem_reg_write;
+    wire ex_mem_mem_read;
+    wire ex_mem_mem_write;
+    wire ex_mem_mem_to_reg;
+
+    ex_mem ex_mem_reg (
+
+        .clk(clk),
+        .rst(rst),
+
+        .write_enable(1'b1),
+
+        .alu_result_in(alu_result_ex),
+        .read_data2_in(id_ex_read_data2),
+
+        .rd_in(id_ex_rd),
+
+        .reg_write_in(id_ex_reg_write),
+        .mem_read_in(id_ex_mem_read),
+        .mem_write_in(id_ex_mem_write),
+        .mem_to_reg_in(id_ex_mem_to_reg),
+
+        .alu_result_out(ex_mem_alu_result),
+        .read_data2_out(ex_mem_read_data2),
+
+        .rd_out(ex_mem_rd),
+
+        .reg_write_out(ex_mem_reg_write),
+        .mem_read_out(ex_mem_mem_read),
+        .mem_write_out(ex_mem_mem_write),
+        .mem_to_reg_out(ex_mem_mem_to_reg)
+
+    );
+
+        // =====================================================
+    // MEM STAGE
+    // =====================================================
+
+    wire [31:0] mem_read_data_mem;
+
+    data_memory data_mem (
+
+        .clk(clk),
+
+        .mem_write(ex_mem_mem_write),
+        .mem_read(ex_mem_mem_read),
+
+        .address(ex_mem_alu_result),
+
+        .write_data(ex_mem_read_data2),
+
+        .read_data(mem_read_data_mem)
+
+    );
+
+    // =====================================================
+    // MEM/WB PIPELINE REGISTER
+    // =====================================================
+
+    wire [31:0] mem_wb_mem_data;
+
+    wire [31:0] mem_wb_alu_result;
+
+    wire [4:0] mem_wb_rd;
+
+    wire mem_wb_reg_write;
+    wire mem_wb_mem_to_reg;
+
+    mem_wb mem_wb_reg (
+
+        .clk(clk),
+        .rst(rst),
+
+        .write_enable(1'b1),
+
+        .mem_data_in(mem_read_data_mem),
+        .alu_result_in(ex_mem_alu_result),
+
+        .rd_in(ex_mem_rd),
+
+        .reg_write_in(ex_mem_reg_write),
+        .mem_to_reg_in(ex_mem_mem_to_reg),
+
+        .mem_data_out(mem_wb_mem_data),
+        .alu_result_out(mem_wb_alu_result),
+
+        .rd_out(mem_wb_rd),
+
+        .reg_write_out(mem_wb_reg_write),
+        .mem_to_reg_out(mem_wb_mem_to_reg)
+
+    );
+    // =====================================================
+    // WB STAGE
+    // =====================================================
+
+    assign writeback_data =
+            (mem_wb_mem_to_reg) ?
+            mem_wb_mem_data :
+            mem_wb_alu_result;
+
+    assign reg_write_wb = mem_wb_reg_write;
+
+    assign rd_wb = mem_wb_rd;
 endmodule
