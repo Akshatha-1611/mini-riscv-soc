@@ -4,6 +4,7 @@ module if_id (
     input rst,
 
     input write_enable,
+    input flush,
 
     input [31:0] pc_in,
     input [31:0] instruction_in,
@@ -22,10 +23,21 @@ always @(posedge clk or posedge rst) begin
 
     end
 
-    else if (write_enable) begin
+    else begin
 
-        pc_out <= pc_in;
-        instruction_out <= instruction_in;
+        if (flush) begin
+
+            pc_out <= 0;
+            instruction_out <= 0;
+
+        end
+
+        else if (write_enable) begin
+
+            pc_out <= pc_in;
+            instruction_out <= instruction_in;
+
+        end
 
     end
 

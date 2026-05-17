@@ -15,82 +15,158 @@ module control_unit (
 
 always @(*) begin
 
-    // Default values
-    reg_write = 0;
-    mem_read  = 0;
-    mem_write = 0;
-    alu_src   = 0;
-    branch    = 0;
+    // =====================================================
+    // DEFAULT VALUES
+    // =====================================================
+
+    reg_write  = 0;
+    mem_read   = 0;
+    mem_write  = 0;
+    alu_src    = 0;
+    branch     = 0;
     mem_to_reg = 0;
-    alu_op    = 3'b000;
+
+    alu_op     = 3'b000;
+
+    // =====================================================
+    // OPCODE DECODE
+    // =====================================================
 
     case (opcode)
 
-        // -------------------------
-        // R-Type Instructions
-        // -------------------------
+        // -------------------------------------------------
+        // R-TYPE
+        // Example:
+        // ADD x1, x2, x3
+        // -------------------------------------------------
+
         7'b0110011: begin
 
-            reg_write = 1;
-            alu_src   = 0;
-            alu_op    = 3'b000;
+            reg_write  = 1;
+
+            mem_read   = 0;
+            mem_write  = 0;
+
+            alu_src    = 0;
+
+            mem_to_reg = 0;
+
+            branch     = 0;
+
+            alu_op     = 3'b000;
 
         end
 
-        // -------------------------
-        // I-Type (ADDI)
-        // -------------------------
+        // -------------------------------------------------
+        // I-TYPE
+        // Example:
+        // ADDI x1, x0, 10
+        // -------------------------------------------------
+
         7'b0010011: begin
 
-            reg_write = 1;
-            alu_src   = 1;
-            alu_op    = 3'b000;
+            reg_write  = 1;
+
+            mem_read   = 0;
+            mem_write  = 0;
+
+            alu_src    = 1;
+
+            mem_to_reg = 0;
+
+            branch     = 0;
+
+            alu_op     = 3'b000;
 
         end
 
-        // -------------------------
-        // LOAD (LW)
-        // -------------------------
+        // -------------------------------------------------
+        // LOAD
+        // Example:
+        // LW x1, 0(x0)
+        // -------------------------------------------------
+
         7'b0000011: begin
 
-            reg_write = 1;
-            mem_read  = 1;
-            alu_src   = 1;
+            reg_write  = 1;
+
+            mem_read   = 1;
+            mem_write  = 0;
+
+            alu_src    = 1;
+
             mem_to_reg = 1;
-            alu_op    = 3'b000;
+
+            branch     = 0;
+
+            alu_op     = 3'b000;
 
         end
 
-        // -------------------------
-        // STORE (SW)
-        // -------------------------
+        // -------------------------------------------------
+        // STORE
+        // Example:
+        // SW x1, 0(x0)
+        // -------------------------------------------------
+
         7'b0100011: begin
 
-            mem_write = 1;
-            alu_src   = 1;
-            alu_op    = 3'b000;
+            reg_write  = 0;
+
+            mem_read   = 0;
+            mem_write  = 1;
+
+            alu_src    = 1;
+
+            mem_to_reg = 0;
+
+            branch     = 0;
+
+            alu_op     = 3'b000;
 
         end
 
-        // -------------------------
-        // BRANCH (BEQ)
-        // -------------------------
+        // -------------------------------------------------
+        // BRANCH
+        // Example:
+        // BEQ x1, x2, label
+        // -------------------------------------------------
+
         7'b1100011: begin
 
-            branch = 1;
-            alu_op = 3'b001;
+            reg_write  = 0;
+
+            mem_read   = 0;
+            mem_write  = 0;
+
+            alu_src    = 0;
+
+            mem_to_reg = 0;
+
+            branch     = 1;
+
+            alu_op     = 3'b001;
 
         end
+
+        // -------------------------------------------------
+        // DEFAULT
+        // -------------------------------------------------
 
         default: begin
 
-            reg_write = 0;
-            mem_read  = 0;
-            mem_write = 0;
-            alu_src   = 0;
-            branch    = 0;
+            reg_write  = 0;
+
+            mem_read   = 0;
+            mem_write  = 0;
+
+            alu_src    = 0;
+
             mem_to_reg = 0;
-            alu_op    = 3'b000;
+
+            branch     = 0;
+
+            alu_op     = 3'b000;
 
         end
 

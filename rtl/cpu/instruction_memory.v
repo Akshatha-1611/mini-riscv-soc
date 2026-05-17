@@ -17,17 +17,13 @@ initial begin
 
     // Sample RISC-V program
 
-    // ADDI x1, x0, 10
-    memory[0] = 32'h00A00093;
+    memory[0] = 32'h00002083; // LW   x1, 0(x0)
 
-    // ADDI x2, x0, 20
-    memory[1] = 32'h01400113;
+    memory[1] = 32'h00108133; // ADD  x2, x1, x1
 
-    // ADD x3, x1, x2
-    memory[2] = 32'h002081B3;
+    memory[2] = 32'h002101B3; // ADD  x3, x2, x2
 
-    // SW x3, 0(x0)
-    memory[3] = 32'h00302023;
+    memory[3] = 32'h00302023; // SW   x3, 0(x0)
 
     // LW x4, 0(x0)
     memory[4] = 32'h00002203;
