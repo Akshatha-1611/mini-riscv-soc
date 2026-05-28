@@ -1,7 +1,8 @@
 module pipelined_datapath (
 
     input clk,
-    input rst
+    input rst,
+    input cpu_ready
 
 );
 
@@ -11,13 +12,27 @@ module pipelined_datapath (
 
     reg [31:0] pc;
 
+    wire pipeline_stall;
+
+    // Combined stall logic
+    wire final_pc_write;
+    wire final_if_id_write;
+
+    assign pipeline_stall = ~cpu_ready;
+
+    assign final_pc_write =
+            pc_write && ~pipeline_stall;
+
+    assign final_if_id_write =
+            if_id_write && ~pipeline_stall;
+
     always @(posedge clk or posedge rst) begin
 
         if (rst)
 
             pc <= 0;
 
-        else if (pc_write) begin
+        else if (final_pc_write) begin
 
             if (branch_taken_ex)
 
@@ -56,7 +71,7 @@ module pipelined_datapath (
         .clk(clk),
         .rst(rst),
 
-        .write_enable(if_id_write),
+        .write_enable(final_if_id_write),
         .flush(branch_taken_ex),
 
         .pc_in(pc),
