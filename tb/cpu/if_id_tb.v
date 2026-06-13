@@ -1,80 +1,59 @@
+// ============================================================
+// IF/ID Pipeline Register Testbench
+// Tests: normal flow, stall hold, flush to NOP
+// ============================================================
 `timescale 1ns/1ps
 
 module if_id_tb;
+    reg clk, rst_n, flush, stall;
+    reg [31:0] if_pc, if_instr;
+    wire [31:0] id_pc, id_instr;
 
-    reg clk;
-    reg rst;
+    integer pass_count = 0, fail_count = 0;
 
-    reg write_enable;
+    if_id dut(.clk(clk),.rst_n(rst_n),.flush(flush),.stall(stall),
+              .if_pc(if_pc),.if_instr(if_instr),.id_pc(id_pc),.id_instr(id_instr));
 
-    reg [31:0] pc_in;
-    reg [31:0] instruction_in;
-
-    wire [31:0] pc_out;
-    wire [31:0] instruction_out;
-
-    // Instantiate IF/ID register
-    if_id uut (
-
-        .clk(clk),
-        .rst(rst),
-
-        .write_enable(write_enable),
-
-        .pc_in(pc_in),
-        .instruction_in(instruction_in),
-
-        .pc_out(pc_out),
-        .instruction_out(instruction_out)
-
-    );
-
-    // Clock generation
     always #5 clk = ~clk;
 
+    task check32;
+        input [31:0] got, exp;
+        input [255:0] name;
+        begin
+            if (got === exp) begin $display("PASS | %0s", name); pass_count++; end
+            else begin $display("FAIL | %0s | got=%h exp=%h", name, got, exp); fail_count++; end
+        end
+    endtask
+
     initial begin
+        $dumpfile("sim/if_id_tb.vcd"); $dumpvars(0, if_id_tb);
+        clk=0; rst_n=0; flush=0; stall=0; if_pc=0; if_instr=0;
+        #12; rst_n=1;
 
-        $dumpfile("if_id_tb.vcd");
-        $dumpvars(0, if_id_tb);
+        // Normal pass-through
+        @(negedge clk); if_pc=32'h100; if_instr=32'hABCDEF01;
+        @(posedge clk); #1;
+        check32(id_pc, 32'h100, "normal_pc");
+        check32(id_instr, 32'hABCDEF01, "normal_instr");
 
-        // Initialize
-        clk = 0;
-        rst = 1;
-        write_enable = 1;
+        // Stall: hold
+        @(negedge clk); stall=1; if_pc=32'h200; if_instr=32'hDEAD0000;
+        @(posedge clk); #1;
+        check32(id_pc, 32'h100, "stall_hold_pc");
+        check32(id_instr, 32'hABCDEF01, "stall_hold_instr");
+        stall=0;
 
-        pc_in = 0;
-        instruction_in = 0;
+        // Flush: NOP
+        @(negedge clk); flush=1; if_pc=32'h300; if_instr=32'hFFFFFFFF;
+        @(posedge clk); #1;
+        check32(id_instr, 32'h00000013, "flush_nop");
+        flush=0;
 
-        #10;
-        rst = 0;
+        // Reset: NOP
+        rst_n=0; #12; rst_n=1; #5;
+        check32(id_instr, 32'h00000013, "reset_nop");
 
-        // Cycle 1
-        pc_in = 32'd0;
-        instruction_in = 32'h00A00093;
-
-        #10;
-
-        // Cycle 2
-        pc_in = 32'd4;
-        instruction_in = 32'h01400113;
-
-        #10;
-
-        // Stall example
-        write_enable = 0;
-
-        pc_in = 32'd8;
-        instruction_in = 32'h002081B3;
-
-        #10;
-
-        // Resume
-        write_enable = 1;
-
-        #10;
-
-        $finish;
-
+        $display("\n=== Results: %0d PASS, %0d FAIL ===", pass_count, fail_count);
+        #10 $finish;
     end
-
 endmodule

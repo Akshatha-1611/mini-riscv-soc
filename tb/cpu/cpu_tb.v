@@ -1,38 +1,10 @@
+// ============================================================
+// cpu_tb — alias for pipelined_cpu_tb
+// Included for compatibility with the project file listing.
+// Run pipelined_cpu_tb.v directly for full pipeline test.
+// ============================================================
 `timescale 1ns/1ps
 
-module cpu_tb;
-
-    reg clk;
-    reg rst;
-
-    // Instantiate datapath
-    datapath uut (
-
-        .clk(clk),
-        .rst(rst)
-
-    );
-
-    // Clock generation
-    always #5 clk = ~clk;
-
-    initial begin
-
-        $dumpfile("cpu_tb.vcd");
-        $dumpvars(0, cpu_tb);
-
-        // Initialize
-        clk = 0;
-        rst = 1;
-
-        #10;
-        rst = 0;
-
-        // Run CPU
-        #100;
-
-        $finish;
-
-    end
-
-endmodule
+// Re-use pipelined_cpu_tb as the full CPU test
+// To simulate: iverilog -o sim/cpu_tb rtl/cpu/**/*.v rtl/cpu/*.v tb/cpu/pipelined_cpu_tb.v
+// See scripts/run_all.sh for automation

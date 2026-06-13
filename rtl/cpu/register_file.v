@@ -1,50 +1,41 @@
+// ============================================================
+// Register File
+// 32 x 32-bit registers, x0 hardwired to 0
+// Dual read ports, single write port
+// Write on rising edge, read combinationally
+// ============================================================
+`timescale 1ns/1ps
+
 module register_file (
-
-    input clk,
-    input rst,
-
+    input  wire        clk,
+    input  wire        rst_n,
     // Read ports
-    input  [4:0] rs1,
-    input  [4:0] rs2,
-
+    input  wire [4:0]  rs1,
+    input  wire [4:0]  rs2,
+    output wire [31:0] rd1,
+    output wire [31:0] rd2,
     // Write port
-    input  [4:0] rd,
-    input  [31:0] write_data,
-    input  reg_write,
-
-    // Read data outputs
-    output [31:0] read_data1,
-    output [31:0] read_data2
-
+    input  wire [4:0]  rd_addr,
+    input  wire [31:0] rd_data,
+    input  wire        we
 );
 
-    // 32 registers, each 32-bit
-    reg [31:0] registers [31:0];
-
+    reg [31:0] regs [0:31];
     integer i;
 
-    // Reset + Write Logic
-    always @(posedge clk or posedge rst) begin
-
-        if (rst) begin
-
+    // x0 is always 0; write other regs on rising edge
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
             for (i = 0; i < 32; i = i + 1)
-                registers[i] <= 32'b0;
-
+                regs[i] <= 32'b0;
+        end else begin
+            if (we && rd_addr != 5'b0)
+                regs[rd_addr] <= rd_data;
         end
-
-        else begin
-
-            // x0 must always remain 0
-            if (reg_write && (rd != 5'b00000))
-                registers[rd] <= write_data;
-
-        end
-
     end
 
-    // Combinational Read
-    assign read_data1 = (rs1 == 5'b00000) ? 32'b0 : registers[rs1];
-    assign read_data2 = (rs2 == 5'b00000) ? 32'b0 : registers[rs2];
+    // Combinational reads; x0 always reads 0
+    assign rd1 = (rs1 == 5'b0) ? 32'b0 : regs[rs1];
+    assign rd2 = (rs2 == 5'b0) ? 32'b0 : regs[rs2];
 
 endmodule

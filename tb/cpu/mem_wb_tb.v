@@ -1,91 +1,55 @@
+// ============================================================
+// MEM/WB Pipeline Register Testbench
+// ============================================================
 `timescale 1ns/1ps
-
 module mem_wb_tb;
-
-    reg clk;
-    reg rst;
-
-    reg write_enable;
-
-    reg [31:0] mem_data_in;
-    reg [31:0] alu_result_in;
-
+    reg clk, rst_n;
+    reg reg_write_in, mem_to_reg_in;
+    reg [31:0] mem_data_in, alu_result_in, pc_plus4_in;
     reg [4:0] rd_in;
 
-    reg reg_write_in;
-    reg mem_to_reg_in;
-
-    wire [31:0] mem_data_out;
-    wire [31:0] alu_result_out;
-
+    wire reg_write_out, mem_to_reg_out;
+    wire [31:0] mem_data_out, alu_result_out, pc_plus4_out;
     wire [4:0] rd_out;
 
-    wire reg_write_out;
-    wire mem_to_reg_out;
+    integer pass_count = 0, fail_count = 0;
 
-    // Instantiate MEM/WB register
-    mem_wb uut (
-
-        .clk(clk),
-        .rst(rst),
-
-        .write_enable(write_enable),
-
-        .mem_data_in(mem_data_in),
-        .alu_result_in(alu_result_in),
-
-        .rd_in(rd_in),
-
-        .reg_write_in(reg_write_in),
-        .mem_to_reg_in(mem_to_reg_in),
-
-        .mem_data_out(mem_data_out),
-        .alu_result_out(alu_result_out),
-
-        .rd_out(rd_out),
-
-        .reg_write_out(reg_write_out),
-        .mem_to_reg_out(mem_to_reg_out)
-
+    mem_wb dut(
+        .clk(clk),.rst_n(rst_n),
+        .reg_write_in(reg_write_in),.mem_to_reg_in(mem_to_reg_in),
+        .mem_data_in(mem_data_in),.alu_result_in(alu_result_in),
+        .rd_in(rd_in),.pc_plus4_in(pc_plus4_in),
+        .reg_write_out(reg_write_out),.mem_to_reg_out(mem_to_reg_out),
+        .mem_data_out(mem_data_out),.alu_result_out(alu_result_out),
+        .rd_out(rd_out),.pc_plus4_out(pc_plus4_out)
     );
 
-    // Clock generation
     always #5 clk = ~clk;
 
     initial begin
+        $dumpfile("sim/mem_wb_tb.vcd"); $dumpvars(0, mem_wb_tb);
+        clk=0; rst_n=0;
+        reg_write_in=0; mem_to_reg_in=0; mem_data_in=0;
+        alu_result_in=0; pc_plus4_in=0; rd_in=0;
+        #12; rst_n=1;
 
-        $dumpfile("mem_wb_tb.vcd");
-        $dumpvars(0, mem_wb_tb);
+        @(negedge clk);
+        reg_write_in=1; mem_to_reg_in=1;
+        mem_data_in=32'hCAFEBABE; alu_result_in=32'hDEADBEEF;
+        rd_in=5'd12; pc_plus4_in=32'h2004;
+        @(posedge clk); #1;
+        if (reg_write_out===1 && mem_to_reg_out===1 &&
+            mem_data_out===32'hCAFEBABE && rd_out===5'd12)
+            begin $display("PASS | mem_wb_load"); pass_count++; end
+        else begin $display("FAIL | mem_wb_load"); fail_count++; end
 
-        // Initialize
-        clk = 0;
-        rst = 1;
+        @(negedge clk); mem_to_reg_in=0;
+        @(posedge clk); #1;
+        if (mem_to_reg_out===0)
+            begin $display("PASS | mem_wb_alu_src"); pass_count++; end
+        else begin $display("FAIL | mem_wb_alu_src"); fail_count++; end
 
-        write_enable = 1;
-
-        #10;
-        rst = 0;
-
-        // Test values
-        mem_data_in = 32'd1234;
-        alu_result_in = 32'd30;
-
-        rd_in = 5'd4;
-
-        reg_write_in = 1;
-        mem_to_reg_in = 1;
-
-        #10;
-
-        // Stall test
-        write_enable = 0;
-
-        mem_data_in = 32'd9999;
-
-        #10;
-
-        $finish;
-
+        $display("\n=== Results: %0d PASS, %0d FAIL ===", pass_count, fail_count);
+        #10 $finish;
     end
-
 endmodule

@@ -1,35 +1,33 @@
-module instruction_memory (
+// ============================================================
+// Instruction Memory (ROM)
+// 1024 x 32-bit word-addressed, synchronous read
+// Initialized with $readmemh for simulation
+// ============================================================
+`timescale 1ns/1ps
 
-    input  [31:0] address,
-    output [31:0] instruction
-
+module instruction_memory #(
+    parameter MEM_DEPTH = 1024,
+    parameter MEM_FILE  = "program.hex"
+)(
+    input  wire        clk,
+    input  wire [31:0] addr,      // Byte address
+    output reg  [31:0] instr      // 32-bit instruction
 );
 
-reg [31:0] memory [0:255];
+    reg [31:0] mem [0:MEM_DEPTH-1];
+    integer i;
 
-integer i;
+    // Load program; ignore error if file not found (zeroes used)
+    initial begin
+        for (i = 0; i < MEM_DEPTH; i = i + 1)
+            mem[i] = 32'h00000013; // NOP (ADDI x0,x0,0)
+        if (MEM_FILE != "")
+            $readmemh(MEM_FILE, mem);
+    end
 
-initial begin
-
-    // Initialize all memory locations to zero
-    for (i = 0; i < 256; i = i + 1)
-        memory[i] = 32'b0;
-
-    // Sample RISC-V program
-
-    memory[0] = 32'h00002083; // LW   x1, 0(x0)
-
-    memory[1] = 32'h00108133; // ADD  x2, x1, x1
-
-    memory[2] = 32'h002101B3; // ADD  x3, x2, x2
-
-    memory[3] = 32'h00302023; // SW   x3, 0(x0)
-
-    // LW x4, 0(x0)
-    memory[4] = 32'h00002203;
-
-end
-
-assign instruction = memory[address[31:2]];
+    // Word-aligned synchronous read
+    always @(posedge clk) begin
+        instr <= mem[addr[31:2]]; // Drop bottom 2 bits (byte → word)
+    end
 
 endmodule

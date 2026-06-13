@@ -1,10 +1,41 @@
-*.vcd
-*.wlf
+# Compiled simulation outputs
+sim/*.vcd
+sim/*.lxt
+sim/*.fst
+sim/alu_tb
+sim/register_file_tb
+sim/immediate_generator_tb
+sim/control_unit_tb
+sim/data_memory_tb
+sim/instruction_memory_tb
+sim/if_id_tb
+sim/id_ex_tb
+sim/ex_mem_tb
+sim/mem_wb_tb
+sim/hazard_detection_unit_tb
+sim/forwarding_unit_tb
+sim/pipelined_cpu_tb
+sim/cache_controller_tb
+sim/cache_system_tb
+sim/cdc_fifo_tb
+sim/soc_tb
+
+# Keep GTKWave save files
+!sim/*.gtkw
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Synthesis outputs (if added later)
+synth/
+reports/
 *.log
-*.jou
-*.str
-*.tmp
-*.bak
-transcript
-vsim.wlf
-work/
+*.rpt

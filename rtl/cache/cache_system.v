@@ -1,79 +1,40 @@
+// ============================================================
+// Cache System — wraps cache_controller + main_memory
+// No parameters needed: controller is fixed 4-set for sim
+// ============================================================
+`timescale 1ns/1ps
+
 module cache_system (
-
-    input clk,
-    input rst,
-
-    // CPU side
-    input [31:0] cpu_addr,
-    input [31:0] cpu_write_data,
-
-    input cpu_read,
-    input cpu_write,
-
-    output [31:0] cpu_read_data,
-    output cpu_ready
-
+    input  wire        clk,
+    input  wire        rst_n,
+    input  wire [31:0] cpu_addr,
+    input  wire [31:0] cpu_wdata,
+    input  wire        cpu_we,
+    input  wire        cpu_re,
+    output wire [31:0] cpu_rdata,
+    output wire        cpu_ready,
+    output wire        cpu_stall
 );
 
-    // ============================================
-    // CACHE ↔ MEMORY WIRES
-    // ============================================
+    wire [31:0] mem_addr, mem_wdata, mem_rdata;
+    wire        mem_we, mem_re, mem_ready;
 
-    wire [31:0] mem_addr;
-    wire [31:0] mem_write_data;
-
-    wire mem_read;
-    wire mem_write;
-
-    wire [31:0] mem_read_data;
-    wire mem_ready;
-
-    // ============================================
-    // CACHE CONTROLLER
-    // ============================================
-
-    cache_controller cache (
-
-        .clk(clk),
-        .rst(rst),
-
-        .cpu_addr(cpu_addr),
-        .cpu_write_data(cpu_write_data),
-
-        .cpu_read(cpu_read),
-        .cpu_write(cpu_write),
-
-        .cpu_read_data(cpu_read_data),
-        .cpu_ready(cpu_ready),
-
-        .mem_addr(mem_addr),
-        .mem_write_data(mem_write_data),
-
-        .mem_read(mem_read),
-        .mem_write(mem_write),
-
-        .mem_read_data(mem_read_data),
-        .mem_ready(mem_ready)
-
+    cache_controller u_cache (
+        .clk      (clk),       .rst_n    (rst_n),
+        .cpu_addr (cpu_addr),  .cpu_wdata(cpu_wdata),
+        .cpu_we   (cpu_we),    .cpu_re   (cpu_re),
+        .cpu_rdata(cpu_rdata), .cpu_ready(cpu_ready),
+        .cpu_stall(cpu_stall),
+        .mem_addr (mem_addr),  .mem_wdata(mem_wdata),
+        .mem_we   (mem_we),    .mem_re   (mem_re),
+        .mem_rdata(mem_rdata), .mem_ready(mem_ready)
     );
 
-    // ============================================
-    // MAIN MEMORY
-    // ============================================
-
-    main_memory memory (
-
-        .clk(clk),
-
-        .addr(mem_addr),
-        .write_data(mem_write_data),
-
-        .mem_read(mem_read),
-        .mem_write(mem_write),
-
-        .read_data(mem_read_data),
-        .ready(mem_ready)
-
+    main_memory u_mem (
+        .clk  (clk),  .rst_n(rst_n),
+        .addr (mem_addr),  .wdata(mem_wdata),
+        .we   (mem_we),    .re   (mem_re),
+        .rdata(mem_rdata), .ready(mem_ready)
     );
 
 endmodule

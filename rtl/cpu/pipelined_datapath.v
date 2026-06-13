@@ -1,537 +1,353 @@
+// ============================================================
+// Pipelined Datapath
+// 5-stage RISC-V pipeline: IF → ID → EX → MEM → WB
+// Includes: forwarding, hazard detection, branch resolution
+// ============================================================
+`timescale 1ns/1ps
+
 module pipelined_datapath (
-
-    input clk,
-    input rst,
-    input cpu_ready
-
+    input  wire        clk,
+    input  wire        rst_n,
+    // Instruction memory interface
+    output wire [31:0] imem_addr,
+    input  wire [31:0] imem_data,
+    // Data memory interface
+    output wire [31:0] dmem_addr,
+    output wire [31:0] dmem_wdata,
+    output wire        dmem_we,
+    output wire        dmem_re,
+    output wire [2:0]  dmem_width,
+    input  wire [31:0] dmem_rdata,
+    // Debug: expose register file write-back
+    output wire [4:0]  wb_rd,
+    output wire [31:0] wb_data,
+    output wire        wb_we
 );
 
-    // =====================================================
-    // PROGRAM COUNTER
-    // =====================================================
+    // =========================================================
+    // Stage 1: IF — Instruction Fetch
+    // =========================================================
+    reg  [31:0] pc;
+    wire [31:0] pc_plus4   = pc + 32'd4;
+    wire [31:0] branch_target;
+    wire [31:0] jump_target;
+    wire [31:0] jalr_target;
+    wire        branch_taken;
+    wire        ex_jump;
+    wire        ex_jalr;
+    wire        pc_write_en;
 
-    reg [31:0] pc;
+    assign imem_addr = pc;
 
-    wire pipeline_stall;
-
-    // Combined stall logic
-    wire final_pc_write;
-    wire final_if_id_write;
-
-    assign pipeline_stall = ~cpu_ready;
-
-    assign final_pc_write =
-            pc_write && ~pipeline_stall;
-
-    assign final_if_id_write =
-            if_id_write && ~pipeline_stall;
-
-    always @(posedge clk or posedge rst) begin
-
-        if (rst)
-
-            pc <= 0;
-
-        else if (final_pc_write) begin
-
-            if (branch_taken_ex)
-
-                pc <= branch_target_ex;
-
-            else
-
-                pc <= pc + 4;
-
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            pc <= 32'b0;
+        else if (pc_write_en) begin
+            if      (ex_jump)       pc <= jump_target;
+            else if (ex_jalr)       pc <= jalr_target;
+            else if (branch_taken)  pc <= branch_target;
+            else                    pc <= pc_plus4;
         end
-
     end
 
-    // =====================================================
-    // IF STAGE
-    // =====================================================
+    // =========================================================
+    // IF/ID Register
+    // =========================================================
+    wire        if_id_write_en;
+    wire        if_id_flush_sig;
+    wire [31:0] id_pc;
+    wire [31:0] id_instr;
 
-    wire [31:0] instruction_if;
-
-    instruction_memory instr_mem (
-
-        .address(pc),
-        .instruction(instruction_if)
-
+    if_id u_if_id (
+        .clk     (clk),
+        .rst_n   (rst_n),
+        .flush   (if_id_flush_sig),
+        .stall   (!if_id_write_en),
+        .if_pc   (pc),
+        .if_instr(imem_data),
+        .id_pc   (id_pc),
+        .id_instr(id_instr)
     );
 
-    // =====================================================
-    // IF/ID PIPELINE REGISTER
-    // =====================================================
+    // =========================================================
+    // Stage 2: ID — Decode
+    // =========================================================
+    wire [6:0]  id_opcode = id_instr[6:0];
+    wire [4:0]  id_rd     = id_instr[11:7];
+    wire [2:0]  id_funct3 = id_instr[14:12];
+    wire [4:0]  id_rs1    = id_instr[19:15];
+    wire [4:0]  id_rs2    = id_instr[24:20];
+    wire [6:0]  id_funct7 = id_instr[31:25];
 
-    wire [31:0] if_id_pc;
-    wire [31:0] if_id_instruction;
+    // Control signals
+    wire        id_reg_write, id_mem_to_reg, id_mem_read, id_mem_write;
+    wire        id_alu_src, id_branch, id_jump, id_jalr;
+    wire [3:0]  id_alu_ctrl;
+    wire [2:0]  id_mem_width;
 
-    if_id if_id_reg (
-
-        .clk(clk),
-        .rst(rst),
-
-        .write_enable(final_if_id_write),
-        .flush(branch_taken_ex),
-
-        .pc_in(pc),
-        .instruction_in(instruction_if),
-
-        .pc_out(if_id_pc),
-        .instruction_out(if_id_instruction)
-
+    control_unit u_ctrl (
+        .opcode    (id_opcode),
+        .funct3    (id_funct3),
+        .funct7    (id_funct7),
+        .reg_write (id_reg_write),
+        .mem_read  (id_mem_read),
+        .mem_write (id_mem_write),
+        .mem_to_reg(id_mem_to_reg),
+        .alu_src   (id_alu_src),
+        .branch    (id_branch),
+        .jump      (id_jump),
+        .jalr      (id_jalr),
+        .alu_ctrl  (id_alu_ctrl),
+        .mem_width (id_mem_width)
     );
 
-    // =====================================================
-    // ID STAGE
-    // =====================================================
+    // Register file reads
+    wire [31:0] id_rs1_data, id_rs2_data;
 
-    wire [6:0] opcode_id;
-
-    wire [4:0] rs1_id;
-    wire [4:0] rs2_id;
-    wire [4:0] rd_id;
-
-    assign opcode_id = if_id_instruction[6:0];
-
-    assign rd_id  = if_id_instruction[11:7];
-    assign rs1_id = if_id_instruction[19:15];
-    assign rs2_id = if_id_instruction[24:20];
-
-    wire [4:0] if_id_rs1;
-    wire [4:0] if_id_rs2;
-
-    assign if_id_rs1 = rs1_id;
-    assign if_id_rs2 = rs2_id;
-
-    // =====================================================
-    // CONTROL SIGNALS
-    // =====================================================
-
-    wire reg_write_id;
-    wire mem_read_id;
-    wire mem_write_id;
-    wire alu_src_id;
-    wire mem_to_reg_id;
-    wire branch_id;
-
-    wire [2:0] alu_op_id;
-
-    wire reg_write_safe;
-    wire mem_read_safe;
-    wire mem_write_safe;
-    wire alu_src_safe;
-    wire mem_to_reg_safe;
-    wire branch_safe;
-
-    wire [2:0] alu_op_safe;
-
-    wire pc_write;
-    wire if_id_write;
-    wire control_mux_sel;
-
-    control_unit control (
-
-        .opcode(opcode_id),
-
-        .reg_write(reg_write_id),
-        .mem_read(mem_read_id),
-        .mem_write(mem_write_id),
-
-        .alu_src(alu_src_id),
-
-        .mem_to_reg(mem_to_reg_id),
-
-        .branch(branch_id),
-
-        .alu_op(alu_op_id)
-
+    register_file u_regfile (
+        .clk     (clk),
+        .rst_n   (rst_n),
+        .rs1     (id_rs1),
+        .rs2     (id_rs2),
+        .rd1     (id_rs1_data),
+        .rd2     (id_rs2_data),
+        .rd_addr (wb_rd),
+        .rd_data (wb_data),
+        .we      (wb_we)
     );
 
-    // =====================================================
-    // HAZARD DETECTION UNIT
-    // =====================================================
+    // Immediate generation
+    wire [31:0] id_imm;
 
-    hazard_detection_unit hazard_unit (
-
-        .id_ex_mem_read(id_ex_mem_read),
-
-        .id_ex_rd(id_ex_rd),
-
-        .if_id_rs1(if_id_rs1),
-        .if_id_rs2(if_id_rs2),
-
-        .pc_write(pc_write),
-        .if_id_write(if_id_write),
-
-        .control_mux_sel(control_mux_sel)
-
+    immediate_generator u_immgen (
+        .instruction(id_instr),
+        .imm_out    (id_imm)
     );
 
-    // =====================================================
-    // CONTROL BUBBLE INSERTION
-    // =====================================================
+    // =========================================================
+    // Hazard Detection
+    // =========================================================
+    wire        id_ex_flush_sig;
+    wire [4:0]  ex_rd_wire;
+    wire        ex_mem_read_wire;
 
-    assign reg_write_safe =
-            (control_mux_sel) ? 1'b0 : reg_write_id;
-
-    assign mem_read_safe =
-            (control_mux_sel) ? 1'b0 : mem_read_id;
-
-    assign mem_write_safe =
-            (control_mux_sel) ? 1'b0 : mem_write_id;
-
-    assign alu_src_safe =
-            (control_mux_sel) ? 1'b0 : alu_src_id;
-
-    assign mem_to_reg_safe =
-            (control_mux_sel) ? 1'b0 : mem_to_reg_id;
-
-    assign branch_safe =
-            (control_mux_sel) ? 1'b0 : branch_id;
-
-    assign alu_op_safe =
-            (control_mux_sel) ? 3'b000 : alu_op_id;
-
-    // =====================================================
-    // REGISTER FILE
-    // =====================================================
-
-    wire [31:0] read_data1_id;
-    wire [31:0] read_data2_id;
-
-    // WB stage signals
-    wire reg_write_wb;
-    wire [4:0] rd_wb;
-    wire [31:0] writeback_data;
-
-    register_file reg_file (
-
-        .clk(clk),
-        .rst(rst),
-
-        .rs1(rs1_id),
-        .rs2(rs2_id),
-
-        .rd(rd_wb),
-
-        .write_data(writeback_data),
-        .reg_write(reg_write_wb),
-
-        .read_data1(read_data1_id),
-        .read_data2(read_data2_id)
-
+    hazard_detection_unit u_hazard (
+        .id_ex_mem_read (ex_mem_read_wire),
+        .id_ex_rd       (ex_rd_wire),
+        .if_id_rs1      (id_rs1),
+        .if_id_rs2      (id_rs2),
+        .branch_taken   (branch_taken),
+        .jump           (ex_jump),
+        .jalr           (ex_jalr),
+        .pc_write       (pc_write_en),
+        .if_id_write    (if_id_write_en),
+        .id_ex_flush    (id_ex_flush_sig),
+        .if_id_flush    (if_id_flush_sig)
     );
 
-    // =====================================================
-    // IMMEDIATE GENERATOR
-    // =====================================================
+    // =========================================================
+    // ID/EX Register
+    // =========================================================
+    wire        ex_reg_write, ex_mem_to_reg, ex_mem_write;
+    wire        ex_alu_src, ex_branch, ex_jump_wire, ex_jalr_wire;
+    wire [3:0]  ex_alu_ctrl;
+    wire [2:0]  ex_mem_width;
+    wire [31:0] ex_pc, ex_rs1_data, ex_rs2_data, ex_imm;
+    wire [4:0]  ex_rs1, ex_rs2;
 
-    wire [31:0] imm_id;
+    assign ex_jump     = ex_jump_wire;
+    assign ex_jalr     = ex_jalr_wire;
+    assign ex_rd_wire  = ex_rd_w;
+    wire [4:0] ex_rd_w;
 
-    immediate_generator imm_gen (
-
-        .instruction(if_id_instruction),
-        .imm_out(imm_id)
-
+    id_ex u_id_ex (
+        .clk           (clk),
+        .rst_n         (rst_n),
+        .flush         (id_ex_flush_sig),
+        .reg_write_in  (id_reg_write),
+        .mem_to_reg_in (id_mem_to_reg),
+        .mem_read_in   (id_mem_read),
+        .mem_write_in  (id_mem_write),
+        .alu_src_in    (id_alu_src),
+        .branch_in     (id_branch),
+        .jump_in       (id_jump),
+        .jalr_in       (id_jalr),
+        .alu_ctrl_in   (id_alu_ctrl),
+        .mem_width_in  (id_mem_width),
+        .pc_in         (id_pc),
+        .rs1_data_in   (id_rs1_data),
+        .rs2_data_in   (id_rs2_data),
+        .imm_in        (id_imm),
+        .rs1_in        (id_rs1),
+        .rs2_in        (id_rs2),
+        .rd_in         (id_rd),
+        .reg_write_out (ex_reg_write),
+        .mem_to_reg_out(ex_mem_to_reg),
+        .mem_read_out  (ex_mem_read_wire),
+        .mem_write_out (ex_mem_write),
+        .alu_src_out   (ex_alu_src),
+        .branch_out    (ex_branch),
+        .jump_out      (ex_jump_wire),
+        .jalr_out      (ex_jalr_wire),
+        .alu_ctrl_out  (ex_alu_ctrl),
+        .mem_width_out (ex_mem_width),
+        .pc_out        (ex_pc),
+        .rs1_data_out  (ex_rs1_data),
+        .rs2_data_out  (ex_rs2_data),
+        .imm_out       (ex_imm),
+        .rs1_out       (ex_rs1),
+        .rs2_out       (ex_rs2),
+        .rd_out        (ex_rd_w)
     );
 
-    // =====================================================
-    // ID/EX PIPELINE REGISTER
-    // =====================================================
+    assign ex_rd_wire = ex_rd_w;
 
-    wire [31:0] id_ex_pc;
+    // =========================================================
+    // Stage 3: EX — Execute
+    // =========================================================
+    // Forwarding
+    wire [1:0]  fwd_a, fwd_b;
+    wire        mem_wb_reg_write;
+    wire [4:0]  mem_mem_rd, wb_rd_wire;
+    wire [31:0] ex_mem_alu_result; // forwarded from EX/MEM
+    wire [31:0] mem_wb_writeback;  // forwarded from MEM/WB
 
-    wire [31:0] id_ex_read_data1;
-    wire [31:0] id_ex_read_data2;
-
-    wire [31:0] id_ex_imm;
-
-    wire [4:0] id_ex_rd;
-    wire [4:0] id_ex_rs1;
-    wire [4:0] id_ex_rs2;
-
-    wire id_ex_reg_write;
-    wire id_ex_mem_read;
-    wire id_ex_mem_write;
-    wire id_ex_alu_src;
-    wire id_ex_mem_to_reg;
-    wire id_ex_branch;
-
-    wire [2:0] id_ex_alu_op;
-
-    id_ex id_ex_reg (
-
-        .clk(clk),
-        .rst(rst),
-
-        .write_enable(1'b1),
-
-        .pc_in(if_id_pc),
-
-        .read_data1_in(read_data1_id),
-        .read_data2_in(read_data2_id),
-
-        .imm_in(imm_id),
-
-        .rd_in(rd_id),
-        .rs1_in(rs1_id),
-        .rs2_in(rs2_id),
-
-        .reg_write_in(reg_write_safe),
-        .mem_read_in(mem_read_safe),
-        .mem_write_in(mem_write_safe),
-
-        .alu_src_in(alu_src_safe),
-
-        .mem_to_reg_in(mem_to_reg_safe),
-
-        .branch_in(branch_safe),
-
-        .alu_op_in(alu_op_safe),
-
-        .pc_out(id_ex_pc),
-
-        .read_data1_out(id_ex_read_data1),
-        .read_data2_out(id_ex_read_data2),
-
-        .imm_out(id_ex_imm),
-
-        .rd_out(id_ex_rd),
-        .rs1_out(id_ex_rs1),
-        .rs2_out(id_ex_rs2),
-
-        .reg_write_out(id_ex_reg_write),
-        .mem_read_out(id_ex_mem_read),
-        .mem_write_out(id_ex_mem_write),
-
-        .alu_src_out(id_ex_alu_src),
-
-        .mem_to_reg_out(id_ex_mem_to_reg),
-
-        .branch_out(id_ex_branch),
-
-        .alu_op_out(id_ex_alu_op)
-
-    );
-
-    // =====================================================
-    // EX STAGE
-    // =====================================================
-
-    wire [1:0] forward_a;
-    wire [1:0] forward_b;
-
-    wire [31:0] forwarded_a;
-    wire [31:0] forwarded_b;
-
-    wire [31:0] alu_input_b_ex;
-
-    wire [31:0] alu_result_ex;
-
-    wire zero_ex;
-
-    wire branch_taken_ex;
-    wire [31:0] branch_target_ex;
-
-    assign branch_taken_ex =
-            id_ex_branch && zero_ex;
-
-    assign branch_target_ex =
-            id_ex_pc + id_ex_imm;
-
-    // =====================================================
-    // FORWARDING UNIT
-    // =====================================================
-
-    forwarding_unit forwarding (
-
-        .id_ex_rs1(id_ex_rs1),
-        .id_ex_rs2(id_ex_rs2),
-
-        .ex_mem_rd(ex_mem_rd),
-        .mem_wb_rd(mem_wb_rd),
-
-        .ex_mem_reg_write(ex_mem_reg_write),
+    forwarding_unit u_fwd (
+        .ex_rs1          (ex_rs1),
+        .ex_rs2          (ex_rs2),
+        .ex_mem_reg_write(ex_mem_reg_write_wire),
+        .ex_mem_rd       (ex_mem_rd_wire),
         .mem_wb_reg_write(mem_wb_reg_write),
-
-        .forward_a(forward_a),
-        .forward_b(forward_b)
-
+        .mem_wb_rd       (wb_rd),
+        .forward_a       (fwd_a),
+        .forward_b       (fwd_b)
     );
 
-    // =====================================================
-    // FORWARDING MUXES
-    // =====================================================
+    wire        ex_mem_reg_write_wire;
+    wire [4:0]  ex_mem_rd_wire;
+    wire [31:0] ex_mem_alu_res_wire;
 
-    assign forwarded_a =
+    // Operand A mux
+    wire [31:0] alu_op_a = (fwd_a == 2'b10) ? ex_mem_alu_res_wire :
+                           (fwd_a == 2'b01) ? mem_wb_writeback    :
+                                              ex_rs1_data;
 
-            (forward_a == 2'b10) ? ex_mem_alu_result :
+    // Operand B before ALU-src mux
+    wire [31:0] fwd_b_data = (fwd_b == 2'b10) ? ex_mem_alu_res_wire :
+                             (fwd_b == 2'b01) ? mem_wb_writeback    :
+                                               ex_rs2_data;
 
-            (forward_a == 2'b01) ? writeback_data :
+    wire [31:0] alu_op_b = ex_alu_src ? ex_imm : fwd_b_data;
 
-            id_ex_read_data1;
-
-    assign forwarded_b =
-
-            (forward_b == 2'b10) ? ex_mem_alu_result :
-
-            (forward_b == 2'b01) ? writeback_data :
-
-            id_ex_read_data2;
-
-    // =====================================================
-    // ALU INPUT MUX
-    // =====================================================
-
-    assign alu_input_b_ex =
-
-            (id_ex_alu_src) ?
-
-            id_ex_imm :
-
-            forwarded_b;
-
-    // =====================================================
     // ALU
-    // =====================================================
+    wire [31:0] alu_result;
+    wire        alu_zero;
 
-    alu alu_unit (
-
-        .a(forwarded_a),
-        .b(alu_input_b_ex),
-
-        .alu_sel(id_ex_alu_op),
-
-        .result(alu_result_ex),
-        .zero(zero_ex)
-
+    alu u_alu (
+        .a       (alu_op_a),
+        .b       (alu_op_b),
+        .alu_ctrl(ex_alu_ctrl),
+        .result  (alu_result),
+        .zero    (alu_zero)
     );
 
-    // =====================================================
-    // EX/MEM PIPELINE REGISTER
-    // =====================================================
+    // Branch target address
+    assign branch_target = ex_pc + ex_imm;
+    assign jump_target   = ex_pc + ex_imm;
+    assign jalr_target   = (alu_op_a + ex_imm) & ~32'b1;
 
-    wire [31:0] ex_mem_alu_result;
+    // Branch resolution
+    wire [2:0] ex_funct3 = ex_mem_width; // funct3 stored in mem_width for branches
+    reg branch_taken_r;
+    always @(*) begin
+        branch_taken_r = 1'b0;
+        if (ex_branch) begin
+            case (ex_mem_width)
+                3'b000: branch_taken_r = alu_zero;           // BEQ
+                3'b001: branch_taken_r = !alu_zero;          // BNE
+                3'b100: branch_taken_r = alu_result[0];      // BLT
+                3'b101: branch_taken_r = !alu_result[0];     // BGE
+                3'b110: branch_taken_r = alu_result[0];      // BLTU
+                3'b111: branch_taken_r = !alu_result[0];     // BGEU
+                default: branch_taken_r = 1'b0;
+            endcase
+        end
+    end
+    assign branch_taken = branch_taken_r;
 
-    wire [31:0] ex_mem_read_data2;
+    wire [31:0] ex_pc_plus4 = ex_pc + 32'd4;
 
-    wire [4:0] ex_mem_rd;
+    // =========================================================
+    // EX/MEM Register
+    // =========================================================
+    wire        mem_mem_to_reg, mem_mem_read, mem_mem_write;
+    wire [2:0]  mem_mem_width;
+    wire [31:0] mem_alu_result, mem_rs2_data, mem_pc_plus4;
 
-    wire ex_mem_reg_write;
-    wire ex_mem_mem_read;
-    wire ex_mem_mem_write;
-    wire ex_mem_mem_to_reg;
-
-    ex_mem ex_mem_reg (
-
-        .clk(clk),
-        .rst(rst),
-
-        .write_enable(1'b1),
-
-        .alu_result_in(alu_result_ex),
-
-        .read_data2_in(id_ex_read_data2),
-
-        .rd_in(id_ex_rd),
-
-        .reg_write_in(id_ex_reg_write),
-        .mem_read_in(id_ex_mem_read),
-        .mem_write_in(id_ex_mem_write),
-
-        .mem_to_reg_in(id_ex_mem_to_reg),
-
-        .alu_result_out(ex_mem_alu_result),
-
-        .read_data2_out(ex_mem_read_data2),
-
-        .rd_out(ex_mem_rd),
-
-        .reg_write_out(ex_mem_reg_write),
-        .mem_read_out(ex_mem_mem_read),
-        .mem_write_out(ex_mem_mem_write),
-
-        .mem_to_reg_out(ex_mem_mem_to_reg)
-
+    ex_mem u_ex_mem (
+        .clk           (clk),
+        .rst_n         (rst_n),
+        .reg_write_in  (ex_reg_write),
+        .mem_to_reg_in (ex_mem_to_reg),
+        .mem_read_in   (ex_mem_read_wire),
+        .mem_write_in  (ex_mem_write),
+        .mem_width_in  (ex_mem_width),
+        .alu_result_in (alu_result),
+        .rs2_data_in   (fwd_b_data),
+        .rd_in         (ex_rd_w),
+        .pc_plus4_in   (ex_pc_plus4),
+        .reg_write_out (ex_mem_reg_write_wire),
+        .mem_to_reg_out(mem_mem_to_reg),
+        .mem_read_out  (mem_mem_read),
+        .mem_write_out (mem_mem_write),
+        .mem_width_out (mem_mem_width),
+        .alu_result_out(ex_mem_alu_res_wire),
+        .rs2_data_out  (mem_rs2_data),
+        .rd_out        (ex_mem_rd_wire),
+        .pc_plus4_out  (mem_pc_plus4)
     );
 
-    // =====================================================
-    // MEM STAGE
-    // =====================================================
+    assign ex_mem_alu_result = ex_mem_alu_res_wire;
 
-    wire [31:0] mem_read_data_mem;
+    // =========================================================
+    // Stage 4: MEM — Memory Access
+    // =========================================================
+    assign dmem_addr  = ex_mem_alu_res_wire;
+    assign dmem_wdata = mem_rs2_data;
+    assign dmem_we    = mem_mem_write;
+    assign dmem_re    = mem_mem_read;
+    assign dmem_width = mem_mem_width;
 
-    data_memory data_mem (
+    // =========================================================
+    // MEM/WB Register
+    // =========================================================
+    wire        wb_mem_to_reg;
+    wire [31:0] wb_mem_data, wb_alu_result, wb_pc_plus4;
 
-        .clk(clk),
-
-        .mem_write(ex_mem_mem_write),
-        .mem_read(ex_mem_mem_read),
-
-        .address(ex_mem_alu_result),
-
-        .write_data(ex_mem_read_data2),
-
-        .read_data(mem_read_data_mem)
-
+    mem_wb u_mem_wb (
+        .clk           (clk),
+        .rst_n         (rst_n),
+        .reg_write_in  (ex_mem_reg_write_wire),
+        .mem_to_reg_in (mem_mem_to_reg),
+        .mem_data_in   (dmem_rdata),
+        .alu_result_in (ex_mem_alu_res_wire),
+        .rd_in         (ex_mem_rd_wire),
+        .pc_plus4_in   (mem_pc_plus4),
+        .reg_write_out (mem_wb_reg_write),
+        .mem_to_reg_out(wb_mem_to_reg),
+        .mem_data_out  (wb_mem_data),
+        .alu_result_out(wb_alu_result),
+        .rd_out        (wb_rd),
+        .pc_plus4_out  (wb_pc_plus4)
     );
 
-    // =====================================================
-    // MEM/WB PIPELINE REGISTER
-    // =====================================================
+    // =========================================================
+    // Stage 5: WB — Writeback
+    // =========================================================
+    assign wb_we   = mem_wb_reg_write;
+    assign wb_data = wb_mem_to_reg ? wb_mem_data : wb_alu_result;
 
-    wire [31:0] mem_wb_mem_data;
-    wire [31:0] mem_wb_alu_result;
-
-    wire [4:0] mem_wb_rd;
-
-    wire mem_wb_reg_write;
-    wire mem_wb_mem_to_reg;
-
-    mem_wb mem_wb_reg (
-
-        .clk(clk),
-        .rst(rst),
-
-        .write_enable(1'b1),
-
-        .mem_data_in(mem_read_data_mem),
-
-        .alu_result_in(ex_mem_alu_result),
-
-        .rd_in(ex_mem_rd),
-
-        .reg_write_in(ex_mem_reg_write),
-
-        .mem_to_reg_in(ex_mem_mem_to_reg),
-
-        .mem_data_out(mem_wb_mem_data),
-
-        .alu_result_out(mem_wb_alu_result),
-
-        .rd_out(mem_wb_rd),
-
-        .reg_write_out(mem_wb_reg_write),
-
-        .mem_to_reg_out(mem_wb_mem_to_reg)
-
-    );
-
-    // =====================================================
-    // WB STAGE
-    // =====================================================
-
-    assign writeback_data =
-
-            (mem_wb_mem_to_reg) ?
-
-            mem_wb_mem_data :
-
-            mem_wb_alu_result;
-
-    assign reg_write_wb = mem_wb_reg_write;
-
-    assign rd_wb = mem_wb_rd;
+    // MEM/WB forward value for forwarding unit
+    assign mem_wb_writeback = wb_data;
 
 endmodule
