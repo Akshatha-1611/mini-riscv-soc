@@ -1,0 +1,25 @@
+# ── Line ending rules for Mini RISC-V SoC ──────────────────
+# Shell scripts must always use LF (Unix) line endings
+# or bash will fail on Linux/WSL with "bad interpreter" error
+scripts/*.sh    text eol=lf
+
+# Verilog files — keep LF
+*.v             text eol=lf
+
+# Markdown and text docs — auto (let Git decide per OS)
+*.md            text
+*.txt           text
+
+# GTKWave save files — LF
+*.gtkw          text eol=lf
+
+# Hex files — LF
+*.hex           text eol=lf
+
+# Binary files — never touch line endings
+*.png           binary
+*.jpg           binary
+*.gif           binary
+*.pdf           binary
+*.tar.gz        binary
+*.zip           binary
